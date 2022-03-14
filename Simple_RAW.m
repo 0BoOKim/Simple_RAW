@@ -4,7 +4,7 @@
 clear all;
 close all;
 
-BEB_ENABLE = 0;
+BEB_ENABLE = 1;
     
 %-------------------------------------------
 % ASSUMPTIONS
@@ -19,7 +19,7 @@ BEB_ENABLE = 0;
 % PARAMETERS & VARIABLES
 %------------------------------------------
 N_slot = 1000000;         % total number of slots
-N_user = 6; %2/10/50/100/200            % number of users
+N_user = 2000; % 100/500/1000/1500/2000           % number of users
 
 R_data = 0.3*10^6*ones(1,N_user); 
 %R_data = [12 24 48]*10^6;
@@ -71,9 +71,9 @@ if On_RAW
 
 
 
-    C = 500;       % Slot Duration Count
+    C = 1000;       % Slot Duration Count
     T_RAW_Slot = 500*10^-6 + C*120*10^-6;  % Duration of RAW Slot 
-    N_RAW = 3;   % number of RAW Slots
+    N_RAW = 12;   % number of RAW Slots
 
     T_RAW_Slot_in_Slot = ceil(T_RAW_Slot/T_slot);
     L_Beacon = 0;  % length of Beacon Frame. (TBD)
@@ -199,7 +199,7 @@ while(i < N_slot-1)
         Idx_Enabled_RAW = find(Tab_RAW(:,3) == 1); 
         Assigned_STA = List_Assigned_STA(Idx_Enabled_RAW,:);
         
-        if ismember(0, Assigned_STA)    %
+        if ismember(0, Assigned_STA)    % the ID "0" is not for STA's ID.
             Assigned_STA(Assigned_STA == 0) = [];
         end
         
@@ -230,12 +230,13 @@ while(i < N_slot-1)
 
         % check whether BC = 0
         for j=1:N_user_in_RAW_Slot
-            if (bc(Assigned_STA(j)) == 0)
-                tx_state(i:(i+T_txslot(Assigned_STA(j))-1),Assigned_STA(j)) = STATE_TX;
-                % set sate from i to i+T_txslot-1 = STATE_TX
-                n_txnode = n_txnode + 1;          
-                n_access(Assigned_STA(j)) = n_access(Assigned_STA(j))+1;
-
+            if (bc(Assigned_STA(j)) == 0) 
+                if  T_txslot < Tab_RAW(Idx_Enabled_RAW, 2) - i   % Only if the rest of RAW slot is longer than a transmission time, the transmission is allowed.    
+                    tx_state(i:(i+T_txslot(Assigned_STA(j))-1),Assigned_STA(j)) = STATE_TX;
+                    % set sate from i to i+T_txslot-1 = STATE_TX
+                    n_txnode = n_txnode + 1;          
+                    n_access(Assigned_STA(j)) = n_access(Assigned_STA(j))+1;
+                end
                 bc(Assigned_STA(j)) = ceil(rand*CW(Assigned_STA(j)));
                 aifs(Assigned_STA(j)) = AIFSN(Assigned_STA(j));            
                 % re-select a new random backoff & aifs
@@ -261,6 +262,8 @@ while(i < N_slot-1)
             % check collision
             if (n_txnode == 1)
                 % only one node accesses channel, i.e., no collision
+                Idx_temp_success = [];
+                n_temp_success = 0;
                 for (j=1:N_user_in_RAW_Slot)
                     if (tx_state(i,Assigned_STA(j)) == STATE_TX)
                         n_success(Assigned_STA(j)) = n_success(Assigned_STA(j)) + 1;
@@ -269,8 +272,14 @@ while(i < N_slot-1)
                         if (BEB_ENABLE == 1)
                             CW(Assigned_STA(j)) = CW_min(j);
                         end
+                        
+                        Idx_temp_success = [Idx_temp_success Assigned_STA(j)];
+                        n_temp_success = n_temp_success + 1;
                     end
                 end
+                N_user_in_RAW_Slot = N_user_in_RAW_Slot - n_temp_success;
+                Assigned_STA(Assigned_STA == Idx_temp_success) = [];
+                
             elseif (n_txnode > 1)
                 % more than two nodes access channel => collision
                 for (j=1:N_user_in_RAW_Slot)
@@ -295,93 +304,93 @@ while(i < N_slot-1)
         end
         
     else % No RAW, normal DCF 
-%         % check if channel is idle
-%         if (n_txnode == 0)
-%             for j=1:N_user
-%                 if (aifs(j) > 0)
-%                     aifs(j) = aifs(j) - 1;
-%                     % wait for AIFS
-%                 end
-%             end
-%             for j=1:N_user
-%                 if (aifs(j) == 0)
-%                     %if (aifs_reset(j) == 1)
-%                         bc(j) = bc(j) -1; 
-%                     %elseif (aifs_reset(j) == 0)
-%                     %    bc(j) = 0;
-%                     %end
-%                 end
-% 
-%             end
-%             % decrement backoff counter by 1 for users after waiting for AIFSN
-%         end
-%         % if channel is busy, do not change aifs & backoff counter 
-% 
-%         % check whether BC = 0
-%         for j=1:N_user
-%             if (bc(j) == 0)
-%                 tx_state(i:(i+T_txslot(j)-1),j) = STATE_TX;
-%                 % set sate from i to i+T_txslot-1 = STATE_TX
-%                 n_txnode = n_txnode + 1;          
-%                 n_access(j) = n_access(j)+1;
-% 
-%                 bc(j) = ceil(rand*CW(j));
-%                 aifs(j) = AIFSN(j);            
-%                 % re-select a new random backoff & aifs
-%             end
-%         end
-% 
-%         % update state     
-%         % if channel is busy
-%         if (n_txnode ~= 0 )
-%             % if at least one node is in transmision state
-%             max_duration = max( T_txslot.*(tx_state(i,:)==STATE_TX) );
-%             for (j=1:N_user)
-%                 if (tx_state(i,j) ~= STATE_TX)
-%                     tx_duration = i+max_duration-1;
-%                     tx_state(i:tx_duration,j) = STATE_CS;
-%                     % set state = carrier sensing
-%                     aifs(j) = AIFSN(j);
-%                     %aifs_reset(j) = 1;
-%                     % reset aifs after sensing busy channel
-%                 end
-%             end
-% 
-%             % check collision
-%             if (n_txnode == 1)
-%                 % only one node accesses channel, i.e., no collision
-%                 for (j=1:N_user)
-%                     if (tx_state(i,j) == STATE_TX)
-%                         n_success(j) = n_success(j) + 1;
-%                         %aifs_reset(j) = 0;
-%                         % BEB here...
-%                         if (BEB_ENABLE == 1)
-%                             CW(j) = max(CW(j)-32, CW_min(j));%CW_min(j);
-%                         end
-%                     end
-%                 end
-%             elseif (n_txnode > 1)
-%                 % more than two nodes access channel => collision
-%                 for (j=1:N_user)
-%                     if (tx_state(i,j) == STATE_TX)
-%                         tx_duration = i+T_txslot(j)-1;
-%                         tx_state(i:tx_duration,j) = STATE_COL;
-%                         % set state = collision
-%                         n_collision(j) = n_collision(j)+1;
-%                         %aifs_reset(j) = 1;
-%                         % BEB here.....
-%                         if (BEB_ENABLE == 1)
-%                             CW(j) = min(CW(j) * 3, CW_max); 
-%                         end
-%                     end
-%                 end        
-%             end % end for collision-check
-% 
-%             i = i + max_duration+1;   % increase time index by T_txslot
-%             n_txnode = 0;
-%         else
-%             i=i+1;  % increase time index by 1 (if n_txnode = 0)        
-%         end
+        % check if channel is idle
+        if (n_txnode == 0)
+            for j=1:N_user
+                if (aifs(j) > 0)
+                    aifs(j) = aifs(j) - 1;
+                    % wait for AIFS
+                end
+            end
+            for j=1:N_user
+                if (aifs(j) == 0)
+                    %if (aifs_reset(j) == 1)
+                        bc(j) = bc(j) -1; 
+                    %elseif (aifs_reset(j) == 0)
+                    %    bc(j) = 0;
+                    %end
+                end
+
+            end
+            % decrement backoff counter by 1 for users after waiting for AIFSN
+        end
+        % if channel is busy, do not change aifs & backoff counter 
+
+        % check whether BC = 0
+        for j=1:N_user
+            if (bc(j) == 0)
+                tx_state(i:(i+T_txslot(j)-1),j) = STATE_TX;
+                % set sate from i to i+T_txslot-1 = STATE_TX
+                n_txnode = n_txnode + 1;          
+                n_access(j) = n_access(j)+1;
+
+                bc(j) = ceil(rand*CW(j));
+                aifs(j) = AIFSN(j);            
+                % re-select a new random backoff & aifs
+            end
+        end
+
+        % update state     
+        % if channel is busy
+        if (n_txnode ~= 0 )
+            % if at least one node is in transmision state
+            max_duration = max( T_txslot.*(tx_state(i,:)==STATE_TX) );
+            for (j=1:N_user)
+                if (tx_state(i,j) ~= STATE_TX)
+                    tx_duration = i+max_duration-1;
+                    tx_state(i:tx_duration,j) = STATE_CS;
+                    % set state = carrier sensing
+                    aifs(j) = AIFSN(j);
+                    %aifs_reset(j) = 1;
+                    % reset aifs after sensing busy channel
+                end
+            end
+
+            % check collision
+            if (n_txnode == 1)
+                % only one node accesses channel, i.e., no collision
+                for (j=1:N_user)
+                    if (tx_state(i,j) == STATE_TX)
+                        n_success(j) = n_success(j) + 1;
+                        %aifs_reset(j) = 0;
+                        % BEB here...
+                        if (BEB_ENABLE == 1)
+                            CW(j) = max(CW(j)-32, CW_min(j));%CW_min(j);
+                        end
+                    end
+                end
+            elseif (n_txnode > 1)
+                % more than two nodes access channel => collision
+                for (j=1:N_user)
+                    if (tx_state(i,j) == STATE_TX)
+                        tx_duration = i+T_txslot(j)-1;
+                        tx_state(i:tx_duration,j) = STATE_COL;
+                        % set state = collision
+                        n_collision(j) = n_collision(j)+1;
+                        %aifs_reset(j) = 1;
+                        % BEB here.....
+                        if (BEB_ENABLE == 1)
+                            CW(j) = min(CW(j) * 3, CW_max); 
+                        end
+                    end
+                end        
+            end % end for collision-check
+
+            i = i + max_duration+1;   % increase time index by T_txslot
+            n_txnode = 0;
+        else
+            i=i+1;  % increase time index by 1 (if n_txnode = 0)        
+        end
         
         
     end
@@ -404,6 +413,6 @@ per_user_th = (n_success .* L_data * 8) / (N_slot*T_slot) / 10^6  % Mb/s
 total_th = sum(per_user_th) % Mb/s7/////
 fairness_index = total_th^2 / (N_user * sum(per_user_th.*per_user_th))
 
-collision_prob = sum(n_collision)/sum(n_access)
+%collision_prob = sum(n_collision)/sum(n_access)
 collision_prob2 = mean(n_collision./n_access)
 utilization = sum(sum(tx_state==1)) / N_slot
